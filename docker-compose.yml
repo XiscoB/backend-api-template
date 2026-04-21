@@ -1,0 +1,112 @@
+# ─────────────────────────────────────────────────────────────────
+# Docker Compose for Local Development
+# ─────────────────────────────────────────────────────────────────
+# This file sets up a production-like local environment with:
+# - PostgreSQL database
+# - NestJS backend
+#
+# Authentication (Supabase, Auth0, Keycloak, etc.) is NOT included here.
+# Configure JWT_ISSUER, JWT_AUDIENCE, and JWT_SECRET/JWT_JWKS_URI
+# to point to your identity provider.
+#
+# Usage:
+#   npm run docker:sync            # Generate .env.docker (REQUIRED first!)
+#   docker-compose up              # Start all services
+#   docker-compose up -d           # Start in background
+#   docker-compose down            # Stop all services
+#   docker-compose down -v         # Stop and remove volumes (reset DB)
+# ─────────────────────────────────────────────────────────────────
+
+services:
+  # ─────────────────────────────────────────────────────────────────
+  # PostgreSQL Database
+  # ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: backend-base-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-backend_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backend_password}
+      POSTGRES_DB: ${POSTGRES_DB:-backend_dev}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Exposed on 5430 to avoid conflict with local PostgreSQL installations
+    ports:
+      - '5430:5432'
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-backend_user} -d ${POSTGRES_DB:-backend_dev}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────
+  # NestJS Backend
+  # ─────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend-base-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Load synced environment variables (including JWT config)
+    env_file:
+      - .env.docker
+    environment:
+      # Application
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+
+      # Database - uses Docker service name for host
+      DATABASE_URL: postgresql://${POSTGRES_USER:-backend_user}:${POSTGRES_PASSWORD:-backend_password}@postgres:5432/${POSTGRES_DB:-backend_dev}?schema=public
+
+      # JWT / Authentication
+      # Configured via .env.docker (synced from .env)
+      # See scripts/sync-docker-env.ps1
+      # JWT_ISSUER, JWT_AUDIENCE, JWT_ALGORITHM, JWT_SECRET etc are loaded from env_file
+
+      # Internal Admin Console (disable in production)
+      ADMIN_CONSOLE_ENABLED: ${ADMIN_CONSOLE_ENABLED:-false}
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS}
+
+      # Scenario Testing (for automated E2E tests - NEVER in production)
+      SCENARIO_TESTING: ${SCENARIO_TESTING:-false}
+    ports:
+      - '${PORT:-3000}:3000'
+    volumes:
+      # Mount source code for hot-reloading in development
+      - .:/app
+      # Prevent host node_modules from overriding container's
+      - /app/node_modules
+      # Prevent host prisma generated files from overriding container's
+      - /app/node_modules/.prisma
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────
+  # Redis (Optional)
+  # ─────────────────────────────────────────────────────────────────
+  # Uncomment to enable Redis for distributed features like rate limiting.
+  # Required only when RATE_LIMIT_DRIVER=redis.
+  #
+  redis:
+    image: redis:7-alpine
+    container_name: backend-base-redis
+    # No persistence - ephemeral cache only
+    command: redis-server --save "" --appendonly no
+    # Internal only - not exposed to host by default
+    # Uncomment to expose for debugging:
+    # ports:
+    #   - "6379:6379"
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local

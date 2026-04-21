@@ -1,0 +1,27 @@
+{
+  "welcome": {
+    "subject": "Bienvenido a {{appName}}",
+    "html": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h1 style=\"color: #333;\">¡Bienvenido, {{name}}!</h1><p>Gracias por unirte a {{appName}}.</p><p>Si tienes alguna pregunta, no dudes en ponerte en contacto con nosotros.</p><p style=\"margin-top: 30px;\">Saludos cordiales,<br>El equipo de {{appName}}</p></body></html>",
+    "text": "¡Bienvenido, {{name}}!\n\nGracias por unirte a {{appName}}.\n\nSi tienes alguna pregunta, no dudes en ponerte en contacto con nosotros.\n\nSaludos cordiales,\nEl equipo de {{appName}}"
+  },
+  "gdpr-export-ready": {
+    "subject": "Tu exportación de datos está lista",
+    "html": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h1 style=\"color: #333;\">Tu exportación de datos está lista</h1><p>Hola {{name}},</p><p>Tu exportación de datos solicitada ya está disponible para descargar.</p><p>Este enlace caducará en {{expiryDays}} días.</p><p><a href=\"{{downloadUrl}}\" style=\"display: inline-block; background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px;\">Descargar tus datos</a></p><p style=\"font-size: 12px; color: #666; margin-top: 30px;\">Por motivos de seguridad, este enlace caducará el {{expiryDate}}.</p></body></html>",
+    "text": "Tu exportación de datos está lista\n\nHola {{name}},\n\nTu exportación de datos solicitada ya está disponible para descargar.\n\nEste enlace caducará en {{expiryDays}} días.\n\nDescarga tus datos: {{downloadUrl}}\n\nPor motivos de seguridad, este enlace caducará el {{expiryDate}}."
+  },
+  "gdpr-export-failed": {
+    "subject": "No se ha podido completar la exportación de datos",
+    "html": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h1 style=\"color: #333;\">Error en la exportación de datos</h1><p>Hola {{name}},</p><p>Lamentablemente, no hemos podido completar tu solicitud de exportación de datos.</p><p>Por favor, inténtalo de nuevo o ponte en contacto con el servicio de asistencia si el problema persiste.</p><p style=\"margin-top: 30px;\">Saludos cordiales,<br>El equipo de {{appName}}</p></body></html>",
+    "text": "Error en la exportación de datos\n\nHola {{name}},\n\nLamentablemente, no hemos podido completar tu solicitud de exportación de datos.\n\nPor favor, inténtalo de nuevo o ponte en contacto con el servicio de asistencia si el problema persiste.\n\nSaludos cordiales,\nEl equipo de {{appName}}"
+  },
+  "notification": {
+    "subject": "{{title}}",
+    "html": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h1 style=\"color: #333;\">{{title}}</h1><p>{{message}}</p></body></html>",
+    "text": "{{title}}\n\n{{message}}"
+  },
+  "test": {
+    "subject": "Correo de prueba de {{appName}}",
+    "html": "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\"><h1 style=\"color: #333;\">Correo de prueba</h1><p>Este es un correo de prueba enviado el {{timestamp}}.</p><p>Si has recibido este correo, el sistema de envío de correos funciona correctamente.</p></body></html>",
+    "text": "Correo de prueba\n\nEste es un correo de prueba enviado el {{timestamp}}.\n\nSi has recibido este correo, el sistema de envío de correos funciona correctamente."
+  }
+}

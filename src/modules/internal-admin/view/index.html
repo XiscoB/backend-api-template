@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Internal Admin View (Read-Only)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- Warning Banner -->
+      <header class="warning-banner">
+        <span class="warning-icon">⚠️</span>
+        <span>INTERNAL READ-ONLY ADMIN VIEW</span>
+        <span class="warning-icon">⚠️</span>
+      </header>
+
+      <!-- Auth Section -->
+      <section id="auth-section" class="auth-section">
+        <div class="auth-container">
+          <h1>Internal Admin Viewer</h1>
+          <p class="auth-subtitle">Read-only access to allowlisted tables</p>
+
+          <div class="auth-form">
+            <label for="jwt-input">Paste your Admin JWT Token:</label>
+            <textarea
+              id="jwt-input"
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              rows="4"
+            ></textarea>
+            <button id="connect-btn" class="btn btn-primary">Connect</button>
+            <p id="auth-error" class="error-message" hidden></p>
+          </div>
+
+          <div class="auth-notes">
+            <p><strong>Security Notes:</strong></p>
+            <ul>
+              <li>Token is kept in memory only</li>
+              <li>Lost on page refresh</li>
+              <li>Read-only access (no writes)</li>
+              <li>Requires ADMIN_READ privilege</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Content (hidden until authenticated) -->
+      <main id="main-section" class="main-section" hidden>
+        <nav class="sidebar">
+          <div class="sidebar-header">
+            <h2>Tables</h2>
+            <button id="disconnect-btn" class="btn btn-small btn-danger">Disconnect</button>
+          </div>
+          <ul id="table-list" class="table-list">
+            <!-- Populated by JavaScript -->
+          </ul>
+          <div class="sidebar-footer">
+            <p id="privilege-display" class="privilege-badge"></p>
+          </div>
+        </nav>
+
+        <div class="content">
+          <!-- Table View -->
+          <section id="table-view" class="table-view" hidden>
+            <div class="view-header">
+              <h2 id="current-table-name">Select a Table</h2>
+              <span id="record-count" class="record-count"></span>
+            </div>
+
+            <div class="table-container">
+              <table id="records-table" class="records-table">
+                <thead id="records-thead"></thead>
+                <tbody id="records-tbody"></tbody>
+              </table>
+            </div>
+
+            <div class="pagination">
+              <button id="prev-btn" class="btn btn-secondary" disabled>← Previous</button>
+              <span id="pagination-info" class="pagination-info"></span>
+              <button id="next-btn" class="btn btn-secondary" disabled>Next →</button>
+            </div>
+          </section>
+
+          <!-- Record Detail View -->
+          <section id="record-view" class="record-view" hidden>
+            <div class="view-header">
+              <button id="back-btn" class="btn btn-secondary">← Back to List</button>
+              <h2 id="record-title">Record Detail</h2>
+            </div>
+
+            <div class="record-container">
+              <pre id="record-json" class="record-json"></pre>
+            </div>
+          </section>
+
+          <!-- Empty State -->
+          <section id="empty-state" class="empty-state">
+            <div class="empty-content">
+              <p class="empty-icon">📋</p>
+              <p>Select a table from the sidebar to view records</p>
+            </div>
+          </section>
+
+          <!-- Loading State -->
+          <div id="loading" class="loading" hidden>
+            <div class="spinner"></div>
+            <p>Loading...</p>
+          </div>
+
+          <!-- Error State -->
+          <div id="error-display" class="error-display" hidden>
+            <p class="error-icon">❌</p>
+            <p id="error-message"></p>
+            <button id="retry-btn" class="btn btn-secondary">Retry</button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

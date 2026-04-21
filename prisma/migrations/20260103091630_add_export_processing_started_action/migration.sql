@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "gdpr_audit_action" ADD VALUE 'EXPORT_PROCESSING_STARTED';

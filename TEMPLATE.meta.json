@@ -1,0 +1,46 @@
+{
+  "templateType": "backend-api",
+  "templateName": "backend-base-api",
+  "description": "Reusable NestJS backend API template with externalized authentication and strict role-based authorization",
+
+  "intendedUsage": {
+    "cloneRequired": true,
+    "deployDirectly": false,
+    "expectedConsumers": ["mobile-app", "web-app", "admin-panel", "automation-services"]
+  },
+
+  "authModel": {
+    "authentication": "external",
+    "protocol": "oidc",
+    "tokenType": "jwt",
+    "issuerConfig": "environment",
+    "canonicalRoles": ["USER", "ENTITY", "ADMIN", "SYSTEM"]
+  },
+
+  "guarantees": {
+    "noTokenIssuance": true,
+    "noOAuthFlows": true,
+    "providerAgnostic": true,
+    "roleNamesFrozen": true,
+    "versionedControllersOnly": true
+  },
+
+  "allowedCustomization": {
+    "projectName": true,
+    "databaseSchema": true,
+    "modules": true,
+    "controllers": true
+  },
+
+  "forbiddenChanges": {
+    "authFlowImplementation": true,
+    "roleRenaming": true,
+    "issuerHardcoding": true
+  },
+
+  "ownership": {
+    "maintainer": "you",
+    "intendedLongevity": "multi-project",
+    "templateStatus": "frozen-core"
+  }
+}

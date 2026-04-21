@@ -1,0 +1,652 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Identity {
+  id                       String                    @id @default(uuid()) @db.Uuid
+  /// Maps 1:1 to JWT 'sub' claim from identity provider
+  externalUserId           String                    @unique @map("external_user_id")
+  /// GDPR: Data has been anonymized (final deletion completed, irreversible)
+  anonymized               Boolean                   @default(false)
+  /// GDPR: Account is suspended (Right to Restriction)
+  isSuspended              Boolean                   @default(false) @map("is_suspended")
+  /// Administrative: Permanently banned due to abuse/policy violation (irreversible)
+  isBanned                 Boolean                   @default(false) @map("is_banned")
+  /// Moderation: Account is flagged for review
+  isFlagged                Boolean                   @default(false) @map("is_flagged")
+  /// GDPR: When deletion was requested (logical deletion, grace period active)
+  /// NULL = not deleted, SET = deletion in progress, blocked from access
+  /// After grace period expires, anonymized is set true and this remains for audit
+  deletedAt                DateTime?                 @map("deleted_at")
+  /// Last activity timestamp for inactive account detection
+  lastActivity             DateTime?                 @map("last_activity")
+  createdAt                DateTime                  @default(now()) @map("created_at")
+  updatedAt                DateTime                  @updatedAt @map("updated_at")
+  accountSuspensions       AccountSuspension[]
+  gdprAuditLogs            GdprAuditLog[]
+  requests                 Request[]
+  notificationDeliveryLogs NotificationDeliveryLog[]
+  notificationLogs         NotificationLog[]
+  profile                  Profile?
+  scheduledNotifications   ScheduledNotification[]
+  suspensionBackups        SuspensionBackup[]
+  userNotificationProfile  UserNotificationProfile?
+  deletionLegalHolds       DeletionLegalHold[]
+  reportsFiled             Report[]                  @relation("ReportReporter")
+  reportsReceived          Report[]                  @relation("ReportReported")
+  reportsResolved          Report[]                  @relation("ReportResolver")
+
+  @@map("identities")
+}
+
+model Profile {
+  id          String   @id @default(uuid()) @db.Uuid
+  identityId  String   @unique @map("identity_id") @db.Uuid
+  displayName String   @map("display_name")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  /// User's preferred language for GDPR exports, notifications, and emails
+  /// Stored as ISO 639-1 locale code (e.g., "en", "es", "fr")
+  /// MUST be resolved from database, never from request headers
+  language    String   @default("en")
+  identity    Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Request {
+  id               String        @id @default(uuid()) @db.Uuid
+  identityId       String        @map("identity_id") @db.Uuid
+  requestType      RequestType   @map("request_type")
+  status           RequestStatus @default(PENDING)
+  /// JSON data payload for the request
+  dataPayload      Json?         @map("data_payload")
+  /// Error message if the request failed
+  errorMessage     String?       @map("error_message")
+  /// Standard timestamp for admin console
+  createdAt        DateTime      @default(now()) @map("created_at")
+  /// Standard timestamp for admin console
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  /// Business logic: When the request was first created
+  requestedAt      DateTime      @default(now()) @map("requested_at")
+  /// Business logic: When processing completed/failed
+  processedAt      DateTime?     @map("processed_at")
+  /// Business logic: When the request expires
+  expiresAt        DateTime?     @map("expires_at")
+  /// Number of successful download URL generations
+  downloadCount    Int           @default(0) @map("download_count")
+  /// When the export was last downloaded
+  lastDownloadedAt DateTime?     @map("last_downloaded_at")
+  identity         Identity      @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId])
+  @@index([requestType, status])
+  @@index([createdAt])
+  @@index([status, expiresAt])
+  @@map("gdpr_requests")
+}
+
+model GdprExportFile {
+  id          String    @id @default(uuid()) @db.Uuid
+  /// The GDPR request this file belongs to
+  requestId   String    @map("request_id") @db.Uuid
+  /// Storage key (S3 key or local file path)
+  storageKey  String    @unique @map("storage_key")
+  /// Filename (e.g., "gdpr-export-78a7d345-2026-01-05T07-43-21Z.zip")
+  filename    String
+  /// File size in bytes
+  fileSize    Int       @map("file_size")
+  /// Storage provider (S3 or LOCAL)
+  storageType String    @map("storage_type")
+  /// When the file was created
+  createdAt   DateTime  @default(now()) @map("created_at")
+  /// When the file expires (for cleanup)
+  expiresAt   DateTime  @map("expires_at")
+  /// When the file was deleted (soft delete)
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@index([expiresAt])
+  @@index([deletedAt])
+  @@map("gdpr_export_files")
+}
+
+model GdprAuditLog {
+  id          String          @id @default(uuid()) @db.Uuid
+  identityId  String          @map("identity_id") @db.Uuid
+  action      GdprAuditAction @map("action")
+  /// The table/entity that was affected (e.g., 'profiles')
+  entityType  String?         @map("entity_type")
+  /// JSON metadata about the operation (e.g., request ID, IP address)
+  metadata    Json?
+  /// Standard timestamp for admin console
+  createdAt   DateTime        @default(now()) @map("created_at")
+  /// Standard timestamp for admin console
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  /// Business logic: When the action was performed
+  performedAt DateTime        @default(now()) @map("performed_at")
+  /// Who performed the action (SYSTEM for automated, identity ID for self-service)
+  performedBy String          @map("performed_by")
+  identity    Identity        @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([performedAt])
+  @@map("gdpr_audit_logs")
+}
+
+model NotificationLog {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  /// The user who should see this notification (via Identity)
+  identityId            String                 @map("identity_id") @db.Uuid
+  /// Notification type - semantic only, interpreted by consumers (e.g., GDPR_EXPORT_READY)
+  type                  String
+  /// Opaque JSON payload - interpreted by consumers (UI, email adapters, etc.)
+  payload               Json
+  /// Optional: The actor identity who triggered this notification (e.g., who invited you)
+  actorId               String?                @map("actor_id") @db.Uuid
+  /// When the notification becomes visible to the user
+  visibleAt             DateTime               @map("visible_at")
+  /// When the user marked this notification as read
+  readAt                DateTime?              @map("read_at")
+  /// Soft delete timestamp - notification hidden from user
+  deletedAt             DateTime?              @map("deleted_at")
+  /// GDPR anonymization timestamp
+  anonymizedAt          DateTime?              @map("anonymized_at")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  identity              Identity               @relation(fields: [identityId], references: [id], onDelete: Cascade)
+  scheduledNotification ScheduledNotification?
+
+  @@index([identityId, deletedAt])
+  @@index([identityId, visibleAt(sort: Desc)])
+  @@index([identityId, readAt])
+  @@index([type])
+  @@map("notification_logs")
+}
+
+model ScheduledNotification {
+  id          String                      @id @default(uuid()) @db.Uuid
+  /// The user who should receive this notification (via Identity)
+  identityId  String                      @map("identity_id") @db.Uuid
+  /// Notification type - semantic only (e.g., GDPR_EXPORT_READY)
+  type        String
+  /// Opaque JSON payload - passed through to NotificationLog
+  payload     Json
+  /// Optional: The actor identity who triggered this notification
+  actorId     String?                     @map("actor_id") @db.Uuid
+  /// When this notification should be processed and become visible
+  scheduledAt DateTime                    @map("scheduled_at")
+  /// When cron actually processed this notification
+  processedAt DateTime?                   @map("processed_at")
+  /// When business logic was executed (if successful)
+  executedAt  DateTime?                   @map("executed_at")
+  /// Processing status
+  status      ScheduledNotificationStatus @default(PENDING)
+  /// Number of times execution has been attempted
+  retryCount  Int                         @default(0) @map("retry_count")
+  /// Last failure message
+  lastError   String?                     @map("last_error")
+  /// Optional unique key for debouncing (e.g., "post-123-comment-created")
+  /// If a pending notification exists with this key, it should be updated/debounced instead of creating a new one.
+  uniqueKey   String?                     @map("unique_key")
+
+  /// Link to the created NotificationLog (set on successful execution)
+  notificationLogId String?          @unique @map("fk_notification_log") @db.Uuid
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  notificationLog   NotificationLog? @relation(fields: [notificationLogId], references: [id])
+  identity          Identity         @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId, uniqueKey, status])
+  @@map("scheduled_notifications")
+}
+
+model UserNotificationProfile {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  /// The user this profile belongs to (via Identity)
+  identityId           String                    @unique @map("identity_id") @db.Uuid
+  /// Preferred language for notifications (ISO 639-1, e.g., 'en', 'pl')
+  language             String                    @default("en")
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  /// Master toggle for all notifications (if false, no notifications sent)
+  notificationsEnabled Boolean                   @default(true) @map("notifications_enabled")
+  deliveryLogs         NotificationDeliveryLog[]
+  emailChannels        UserEmailChannel[]
+  pushChannels         UserPushChannel[]
+  identity             Identity                  @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@map("user_notification_profile")
+}
+
+model UserEmailChannel {
+  id                    String                  @id @default(uuid()) @db.Uuid
+  /// Reference to parent notification profile
+  notificationProfileId String                  @map("fk_user_notification_profile") @db.Uuid
+  /// Email address
+  email                 String
+  /// Whether this email channel is enabled for transactional notifications
+  enabled               Boolean                 @default(true)
+  /// Whether promotional/marketing notifications are enabled
+  promoEnabled          Boolean                 @default(false) @map("promo_enabled")
+  /// Token for one-click unsubscribe links
+  unsubscribeToken      String                  @unique @map("unsubscribe_token")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  notificationProfile   UserNotificationProfile @relation(fields: [notificationProfileId], references: [id], onDelete: Cascade)
+
+  @@index([notificationProfileId])
+  @@map("user_email_channel")
+}
+
+model UserPushChannel {
+  id                    String                  @id @default(uuid()) @db.Uuid
+  /// Reference to parent notification profile
+  notificationProfileId String                  @map("fk_user_notification_profile") @db.Uuid
+  /// Push notification token (e.g., Expo push token)
+  expoToken             String                  @unique @map("expo_token")
+  /// Device identifier for deduplication (e.g., device install ID)
+  uniqueKey             String                  @map("unique_key")
+  /// Device platform (ios, android, unknown)
+  platform              String                  @default("unknown")
+  /// Whether this push channel is active (false = token rejected/expired)
+  isActive              Boolean                 @default(true) @map("is_active")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  notificationProfile   UserNotificationProfile @relation(fields: [notificationProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationProfileId, uniqueKey])
+  @@index([notificationProfileId])
+  @@index([expoToken])
+  @@map("user_push_channel")
+}
+
+model AccountSuspension {
+  id             String                   @id @default(uuid()) @db.Uuid
+  /// The user who is suspended (via Identity)
+  identityId     String                   @map("identity_id") @db.Uuid
+  /// Unique suspension identifier (for audit/tracking)
+  suspensionUid  String                   @unique @map("suspension_uid")
+  /// Anonymized UID used to replace userField during suspension
+  anonymizedUid  String                   @map("anonymized_uid")
+  /// When the suspension became active
+  suspendedAt    DateTime                 @map("suspended_at")
+  /// Auto-delete deadline (recovery window). NULL = no auto-escalation
+  suspendedUntil DateTime?                @map("suspended_until")
+  resumedAt      DateTime?                @map("resumed_at")
+  /// When the suspension escalated to deletion (null if not expired)
+  expiredAt      DateTime?                @map("expired_at")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+  /// Current lifecycle state (SUSPENDED, RECOVERED, EXPIRED)
+  lifecycleState SuspensionLifecycleState @default(SUSPENDED) @map("lifecycle_state")
+  /// When the suspension was recovered/resumed (null if still suspended)
+  recoveredAt    DateTime?                @map("recovered_at")
+  /// Timestamp of last recovery (for cooldown enforcement)
+  lastRecoveryAt DateTime?                @map("last_recovery_at")
+  identity       Identity                 @relation(fields: [identityId], references: [id], onDelete: Cascade)
+  backups        SuspensionBackup[]
+
+  @@index([identityId])
+  @@index([lifecycleState])
+  @@index([suspendedUntil, expiredAt])
+  @@map("account_suspensions")
+}
+
+model SuspensionBackup {
+  id                  String            @id @default(uuid()) @db.Uuid
+  /// Reference to the parent suspension
+  suspensionUid       String            @map("suspension_uid")
+  /// The identity who is suspended - denormalized for query efficiency
+  identityId          String            @map("identity_id") @db.Uuid
+  /// Anonymized UID used during suspension - denormalized for restore efficiency
+  anonymizedUid       String            @map("anonymized_uid")
+  /// The table/entity that was backed up (Prisma model name)
+  tableName           String            @map("table_name")
+  /// JSON snapshot of the original data before anonymization
+  backupData          Json              @map("backup_data")
+  /// When this backup was created (immutable)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  /// When this backup was restored (null if not restored)
+  restoredAt          DateTime?         @map("restored_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  /// Schema version for future migrations (e.g., "1.0")
+  backupSchemaVersion String            @default("1.0") @map("backup_schema_version")
+  /// Whether this backup has been used for recovery (consumed)
+  backupUsed          Boolean           @default(false) @map("backup_used")
+  identity            Identity          @relation(fields: [identityId], references: [id], onDelete: Cascade)
+  suspension          AccountSuspension @relation(fields: [suspensionUid], references: [suspensionUid])
+
+  @@unique([suspensionUid, tableName])
+  @@index([identityId])
+  @@index([backupUsed])
+  @@map("suspension_backups")
+}
+
+model NotificationDeliveryLog {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  /// The user who should receive this notification (via Identity)
+  identityId            String                     @map("identity_id") @db.Uuid
+  /// Optional: The notification profile used (null if no profile exists)
+  notificationProfileId String?                    @map("fk_notification_profile") @db.Uuid
+  /// Event that triggered this notification (e.g., GDPR_EXPORT_READY)
+  eventType             String                     @map("event_type")
+  /// Channel type attempted (EMAIL, PUSH, or NONE if no channels)
+  channelType           NotificationChannelType    @map("channel_type")
+  /// Delivery status (SENT = attempted, SKIPPED = not attempted, FAILED = error)
+  status                NotificationDeliveryStatus
+  /// Target address (email or opaque token) - for audit
+  target                String?
+  /// Reason for the status (human-readable, for audit)
+  reason                String?
+  /// Additional metadata (JSON, nullable)
+  meta                  Json?
+  /// When this log was created (immutable)
+  createdAt             DateTime                   @default(now()) @map("created_at")
+  notificationProfile   UserNotificationProfile?   @relation(fields: [notificationProfileId], references: [id])
+  identity              Identity                   @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("notification_delivery_log")
+}
+
+model SchedulerLock {
+  /// Unique job name (e.g., "daily-cleanup", "every-minute")
+  jobName   String    @id @map("job_name")
+  /// Instance ID that holds the lock
+  lockedBy  String    @map("locked_by")
+  /// When the lock was acquired
+  lockedAt  DateTime  @map("locked_at")
+  /// When the lock expires (for stale lock cleanup)
+  expiresAt DateTime  @map("expires_at")
+  /// Last successful execution time
+  lastRunAt DateTime? @map("last_run_at")
+
+  @@map("scheduler_locks")
+}
+
+/// GDPR Deletion Email - Temporary storage for deletion confirmation
+/// Write-once, read-once, delete-immediately after send
+/// Does NOT use notification infrastructure
+/// Email is from JWT claim, NOT notification tables
+model GdprDeletionEmail {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Reference to the GDPR deletion request (unique - one email per request)
+  requestId String   @unique @map("request_id") @db.Uuid
+  /// Email address from authenticated JWT claim (captured at request time)
+  email     String
+  /// Best-effort locale for email content (default: 'en')
+  locale    String   @default("en")
+  /// When created
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("gdpr_deletion_emails")
+}
+
+/// ─────────────────────────────────────────────────────────────
+/// Deletion Legal Hold - Structural Block for Account Deletion ONLY
+/// ─────────────────────────────────────────────────────────────
+///
+/// IMPORTANT: Deletion legal holds are EXCEPTIONAL and MANUAL.
+///
+/// ⚠️ THIS IS NOT:
+/// - Data retention (does NOT preserve any user data)
+/// - Statutory retention (invoices, payments - SEPARATE concern)
+/// - Fraud prevention (use isBanned instead)
+/// - General-purpose legal hold (scoped ONLY to deletion)
+///
+/// Purpose:
+/// - Temporarily block account deletion for legal obligations
+/// - Does NOT retain or preserve any personal data
+/// - Has mandatory expiration (time-bounded)
+///
+/// Properties:
+/// - Identity-based (not external auth ID)
+/// - Time-bounded (expiresAt is required)
+/// - Automatically purged when expired (via cron)
+/// - Does not affect suspension, export, or other operations
+///
+/// When active:
+/// - User CAN still use the application normally
+/// - User CANNOT delete their account
+/// - Deletion request returns explicit error
+///
+/// Out of scope for template layer:
+/// - Scopes (what data is held)
+/// - Workflows (approval, extensions)
+/// - UI (admin console, user visibility)
+/// - Business-specific retention rules
+/// - Statutory retention (separate concern)
+///
+/// @see docs/DELETION_LEGAL_HOLD.md
+model DeletionLegalHold {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// The identity subject to the deletion legal hold
+  identityId String   @map("identity_id") @db.Uuid
+  /// Human-readable reason for the hold (for audit, not enforcement)
+  reason     String
+  /// Legal basis reference (e.g., "court_order", "authority_request")
+  /// Free text - template does NOT enforce specific values
+  legalBasis String   @map("legal_basis")
+  /// REQUIRED: When this hold expires and is automatically removed
+  expiresAt  DateTime @map("expires_at")
+  /// When the hold was created (immutable)
+  createdAt  DateTime @default(now()) @map("created_at")
+  /// Reference to the identity
+  identity   Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@index([identityId])
+  @@index([expiresAt])
+  @@map("deletion_legal_holds")
+}
+
+/// ─────────────────────────────────────────────────────────────
+/// Internal Operational Log - Platform Diagnostics ONLY
+/// ─────────────────────────────────────────────────────────────
+///
+/// ⚠️ THIS IS NOT:
+/// - Analytics or metrics (use external observability tools)
+/// - User activity tracking (privacy violation)
+/// - Audit logs (use GdprAuditLog instead)
+/// - Business event logs (wrong system)
+///
+/// Purpose:
+/// - Internal operational diagnostics (debugging, troubleshooting)
+/// - Time-bounded retention (auto-deleted after configurable period)
+/// - Write-once, immutable entries
+///
+/// Legal basis: Legitimate interest (platform stability)
+/// GDPR: NOT included in data exports (not personal data by default)
+///
+/// @see docs/INTERNAL_OPERATIONAL_LOGS.md
+model InternalLog {
+  id         String           @id @default(uuid()) @db.Uuid
+  /// Log severity level
+  level      InternalLogLevel
+  /// Service/module name (e.g., "GdprCronService")
+  source     String
+  /// Human-readable log message
+  message    String
+  /// Optional structured context (NO PII, NO secrets, NO request bodies)
+  context    Json?
+  /// Optional identity reference for debugging ONLY (NOT for tracking)
+  identityId String?          @map("identity_id") @db.Uuid
+  /// When the log was created (immutable, write-once)
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([level])
+  @@index([source])
+  @@map("internal_logs")
+}
+
+enum InternalLogLevel {
+  INFO
+  WARN
+  ERROR
+
+  @@map("internal_log_level")
+}
+
+enum RequestType {
+  GDPR_EXPORT
+  GDPR_DELETE
+  GDPR_SUSPEND
+
+  @@map("gdpr_request_type")
+}
+
+enum RequestStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  EXPIRED
+
+  @@map("gdpr_request_status")
+}
+
+enum GdprAuditAction {
+  EXPORT_REQUESTED
+  EXPORT_STARTED
+  EXPORT_COMPLETED
+  EXPORT_FAILED
+  EXPORT_DOWNLOADED
+  EXPORT_EXPIRED
+  DELETE
+  SUSPEND
+  RESUME
+  EXPORT_PROCESSING_STARTED
+  EXPORT_RENDERED
+  EXPORT_PACKAGED
+  EXPORT_STORED
+  EXPORT_DOWNLOAD_REQUESTED
+  EXPORT_DOWNLOAD_GRANTED
+  EXPORT_DELETED
+  ADMIN_ACTION
+
+  @@map("gdpr_audit_action")
+}
+
+enum ScheduledNotificationStatus {
+  PENDING
+  PROCESSED
+  EXECUTED
+  FAILED
+  CANCELLED
+
+  @@map("scheduled_notification_status")
+}
+
+/// Suspension lifecycle state (source of truth for account status)
+/// SUSPENDING: Suspension in progress, recovery NOT allowed
+/// SUSPENDED: Data anonymized, backup exists, recovery possible
+enum SuspensionLifecycleState {
+  ACTIVE
+  SUSPENDING
+  SUSPENDED
+  RECOVERED
+  EXPIRED
+
+  @@map("suspension_lifecycle_state")
+}
+
+enum NotificationChannelType {
+  EMAIL
+  PUSH
+  NONE
+
+  @@map("notification_channel_type")
+}
+
+enum NotificationDeliveryStatus {
+  SENT
+  SKIPPED
+  FAILED
+
+  @@map("notification_delivery_status")
+}
+
+/// ─────────────────────────────────────────────────────────────
+/// Report - Content & User Moderation
+/// ─────────────────────────────────────────────────────────────
+///
+/// Purpose:
+/// - Provider-agnostic reporting mechanism
+/// - Decoupled from specific content tables (Posts, Comments, etc.)
+/// - Identity-centric ownership
+///
+/// Principles:
+/// - No external auth identifiers
+/// - No domain-specific FKs
+/// - No enums for business logic (category, contentType)
+///
+/// @see task.md
+model Report {
+  id                 String  @id @default(uuid()) @db.Uuid
+  reporterIdentityId String  @map("reporter_identity_id") @db.Uuid
+  reportedIdentityId String? @map("reported_identity_id") @db.Uuid
+
+  /// Opaque identifier of the reported content (e.g., "post-123", "comment-456")
+  /// Intentionally NOT a foreign key to maintain service independence
+  reportedContentId String? @map("reported_content_id")
+
+  /// Discriminator for report target (e.g., "user", "post", "comment")
+  /// Free-form string, no enum locking
+  contentType String @map("content_type")
+
+  /// Reason for the report (e.g., "spam", "harassment")
+  category String
+
+  /// User-provided explanation
+  /// Potentially long user input - not optimized for querying
+  details String?
+
+  /// Moderation lifecycle
+  resolved Boolean @default(false)
+
+  /// Outcome of the report
+  /// true = confirmed/actionable
+  /// false = dismissed
+  /// null = pending review
+  valid Boolean?
+
+  resolvedAt           DateTime? @map("resolved_at")
+  resolvedByIdentityId String?   @map("resolved_by_identity_id") @db.Uuid
+
+  /// Snapshots & Metadata
+
+  /// Best-effort snapshot of content at report time
+  reportedContentSnapshot Json? @map("reported_content_snapshot")
+
+  /// Best-effort snapshot of reported identity at report time
+  reportedUserSnapshot Json? @map("reported_user_snapshot")
+
+  /// Origin of the report
+  /// Expected values: "user", "system", "admin". Not enforced as enum by design.
+  source String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  /// Soft delete only. Reports must not be hard-deleted automatically.
+  deletedAt DateTime? @map("deleted_at")
+
+  reporterIdentity   Identity  @relation("ReportReporter", fields: [reporterIdentityId], references: [id])
+  reportedIdentity   Identity? @relation("ReportReported", fields: [reportedIdentityId], references: [id])
+  resolvedByIdentity Identity? @relation("ReportResolver", fields: [resolvedByIdentityId], references: [id])
+
+  @@index([resolved, valid])
+  @@index([createdAt])
+  @@index([reporterIdentityId])
+  @@index([reportedIdentityId])
+  @@map("reports")
+}

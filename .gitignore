@@ -1,0 +1,81 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+.env.docker
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# Misc
+*.tgz
+.npmrc
+
+# Storage
+storage/gdpr-exports/
+temp-extract/
+test_output.txt
+test_output_2.txt
+test_output_3.txt
+test_output_5.txt
+test_output_4.txt
+test_output_6.txt
+test_output_7.txt
+test_output_8.txt
+test_output_9.txt
+test_output_10.txt
+test_output_11.txt
+test_output_12.txt
+
+# Personal / AI tool configurations
+.personal/
+.antigravity/
+.claude/
+.cursor/
+
+# Generated artifacts (GDPR exports, test extracts)
+gdpr-extract/
+test-extract/
+
+# Internal process docs (not for public release)
+docs/historical/
+
+# Personal AI assistant configs (not project docs)
+.github/copilot-instructions.md
+.github/.julesrules
+
+# Root-level temporary / analysis files
+/ci_*.json
+/eslint-*.json
+/ops_*.json
+/post_fix_*.txt
+/lint_report.txt
+/profile-response.json
+/response.json
+/test-archiver.js
+/backend-base-api-audit.md

@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CONTRACT ENFORCEMENT CI
+# ─────────────────────────────────────────────────────────────────────────────
+# This workflow intentionally runs only on master and enforces architectural
+# contracts. It is not a general-purpose CI pipeline.
+#
+# What this enforces:
+#   - JWT validation and fail-fast configuration (jwt-config-fail-fast.e2e-spec.ts)
+#   - Provider-agnostic JWT/role extraction (provider-agnostic-jwt.e2e-spec.ts)
+#   - Identity lazy creation and reuse (identity-lifecycle.e2e-spec.ts)
+#   - Guard behavior and auth boundaries (auth.e2e-spec.ts)
+#   - Code formatting consistency
+#   - TypeScript/ESLint architectural rules
+#   - Prisma schema validity
+#   - GDPR registry ownership audit
+#
+# What this intentionally does NOT enforce:
+#   - Coverage thresholds (signal > quantity)
+#   - Test counts (irrelevant metric)
+#   - PR builds (cost-minimization decision)
+#
+# Execution is delegated to scripts/ci.sh (single source of truth).
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Contract Enforcement
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  contract-enforcement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: backend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/backend_test
+      # Dummy PEM for boot validation - actual signing uses SCENARIO_TESTING mode
+      JWT_PUBLIC_KEY: |
+        -----BEGIN PUBLIC KEY-----
+        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Z3VS5JJcds3xfn/ygWyD7cV
+        P7WACAHuLVj8QHV2ZjB+p0t9f0Meb+kPr81NqOXP5xzT3NVvPtBPVp0G4XhZHJHA3n4i
+        7rz8EL/ONH7pHe6f1M9CeF8qRFkynmT+HV+9bFjA+ouT/vV0yLlXvH0FpnAAz0T5FPwP
+        p1hOe8y7g3M9JFp2xqXt+0Yfbyj+Z6F7GXxBIkPl2E7V5fVDxSOr8fNxCPO0qNfl6/8X
+        6k2XT+x1fBt+YAvLxYLzBTXjPuo8xMO0pG8xJJ+UD9hTjSQmFw0TsqRIZwvU8L1Q2GPD
+        fsW+lLiS+DKFJ3EfLvztQJZFGz+cH0V6n6qEQZQcOPdNXKcz4w+/XwIDAQAB
+        -----END PUBLIC KEY-----
+      JWT_ISSUER: https://ci-test.example.com/auth
+      JWT_AUDIENCE: ci-test-backend
+      JWT_ALGORITHM: RS256
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Enforce Critical Scripts Lint
+        run: npm run lint:scripts:critical
+
+      - name: Check code formatting
+        run: npm run format:check
+
+      - name: Run contract enforcement pipeline
+        run: bash scripts/ci/ci.sh

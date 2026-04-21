@@ -1,0 +1,84 @@
+services:
+  # ─────────────────────────────────────────────────────────────────
+  # Redis (Ephemeral)
+  # ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: backend-base-redis
+    # No persistence - ephemeral cache only
+    command: redis-server --save "" --appendonly no --protected-mode no
+    # Internal only - not exposed to host
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+
+  # ─────────────────────────────────────────────────────────────────
+  # Backend Overrides (Enable Redis)
+  # ─────────────────────────────────────────────────────────────────
+  backend:
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      RATE_LIMIT_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+
+  # ─────────────────────────────────────────────────────────────────
+  # API-2 (Replica)
+  # ─────────────────────────────────────────────────────────────────
+  api-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend-base-api-2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Application
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+
+      # Database - uses Docker service name for host
+      DATABASE_URL: postgresql://${POSTGRES_USER:-backend_user}:${POSTGRES_PASSWORD:-backend_password}@postgres:5432/${POSTGRES_DB:-backend_dev}?schema=public
+
+      # JWT / Authentication (configure for your identity provider)
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-authenticated}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-RS256}
+      JWT_JWKS_URI: ${JWT_JWKS_URI}
+      JWT_SECRET: ${JWT_SECRET}
+
+      # Internal Admin Console (disable in production)
+      ADMIN_CONSOLE_ENABLED: ${ADMIN_CONSOLE_ENABLED:-false}
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS}
+
+      # Scenario Testing (for automated E2E tests - NEVER in production)
+      SCENARIO_TESTING: ${SCENARIO_TESTING:-false}
+
+      # Redis Config
+      RATE_LIMIT_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+
+    # Exposed on 3001 to avoid conflict with backend on 3000
+    ports:
+      - '${PORT_API_2:-3001}:3000'
+    volumes:
+      # Mount source code for hot-reloading in development
+      - .:/app
+      # Prevent host node_modules from overriding container's
+      - /app/node_modules
+      # Prevent host prisma generated files from overriding container's
+      - /app/node_modules/.prisma
+    restart: unless-stopped
